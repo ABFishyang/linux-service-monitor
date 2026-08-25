@@ -1,4 +1,4 @@
-# Linux Service Monitor (Apache / Tomcat)
+# Linuxサービス監視・自動復旧（Apache / Tomcat）
 
 [![ShellCheck](https://github.com/ABFishyang/linux-service-monitor/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/ABFishyang/linux-service-monitor/actions/workflows/shellcheck.yml)
 
