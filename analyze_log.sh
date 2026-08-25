@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -uo pipefail
 
 LOG_FILE="/var/log/httpd/access_log"
@@ -12,7 +12,7 @@ sudo awk '{print $9}' "$LOG_FILE" | sort | uniq -c | sort -rn | sudo tee -a "$RE
 
 echo "" | sudo tee -a "$REPORT_FILE"
 echo "--- Top 5 Client IPs ---" | sudo tee -a "$REPORT_FILE"
-sudo awk '{print $1}' "$LOG_FILE" | sort | uniq -c | sort -rn | head -5 | sudo tee -a "$REPORT_FILE"
+sudo awk '{print $1}' "$LOG_FILE" | sort | uniq -c | sort -rn | head -n 5 | sudo tee -a "$REPORT_FILE"
 
 echo "" | sudo tee -a "$REPORT_FILE"
 echo "--- Error Requests (4xx/5xx) ---" | sudo tee -a "$REPORT_FILE"
