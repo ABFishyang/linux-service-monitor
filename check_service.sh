@@ -1,21 +1,25 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -uo pipefail
 
-# ===== 配置区 =====
-SERVICES=("httpd:80" "tomcat:8080")   # 服务名:HTTP端口
-# 実運用ではEC2側で環境変数SNS_TOPIC_ARNを事前にexportしておく想定。
-# 未設定時はプレースホルダーのままとなり、publish時にエラーとなる(アカウントIDをコードに含めないための設計)。
-SNS_TOPIC_ARN="${SNS_TOPIC_ARN:-arn:aws:sns:ap-northeast-1:<YOUR_ACCOUNT_ID>:service-alert}"
-LOG_FILE="/var/log/service-monitor.log"
-MAX_RETRY=1
+# ===== 設定 =====
+CONFIG_FILE="${SERVICE_MONITOR_CONFIG:-/etc/service-monitor.env}"
+if [[ -r "$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+fi
 
-# ===== 日志函数 =====
+SERVICES=("httpd:80" "tomcat:8080") # サービス名:HTTPポート
+SNS_TOPIC_ARN="${SNS_TOPIC_ARN:-}"
+AWS_REGION="${AWS_REGION:-ap-northeast-1}"
+LOG_FILE="${LOG_FILE:-/var/log/service-monitor.log}"
+
+# ===== ログ関数 =====
 log() {
     local msg="$1"
     echo "$(date '+%Y-%m-%d %H:%M:%S') ${msg}" | sudo tee -a "$LOG_FILE" > /dev/null
 }
 
-# ===== 检查函数 =====
+# ===== 監視関数 =====
 check_process() {
     local service="$1"
     systemctl is-active --quiet "$service"
@@ -24,13 +28,12 @@ check_process() {
 check_http() {
     local port="$1"
     local code
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${port}")
-    # 000 = 完全连不上（进程可能真的挂了/端口不通）
-    # 其他任何三位数状态码 = 服务本身在正常响应请求
-    [ "$code" != "000" ] && [ -n "$code" ]
+    code=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 "http://localhost:${port}") || code="000"
+    # 000は接続不能。それ以外の3桁ステータスはHTTP応答ありと判定する。
+    [[ "$code" =~ ^[1-5][0-9]{2}$ ]]
 }
 
-# ===== 主逻辑 =====
+# ===== メイン処理 =====
 for entry in "${SERVICES[@]}"; do
     service="${entry%%:*}"
     port="${entry##*:}"
@@ -48,10 +51,14 @@ for entry in "${SERVICES[@]}"; do
         log "RECOVERED: ${service} restarted successfully"
     else
         log "FAILED: ${service} restart did not resolve the issue"
+        if [[ -z "$SNS_TOPIC_ARN" ]]; then
+            log "ERROR: SNS_TOPIC_ARN is not configured; notification skipped"
+            continue
+        fi
         aws sns publish \
             --topic-arn "$SNS_TOPIC_ARN" \
             --subject "[ALERT] ${service} is down on $(hostname)" \
             --message "Service ${service} failed health check and restart at $(date). Manual intervention required." \
-            --region ap-northeast-1
+            --region "$AWS_REGION"
     fi
 done
